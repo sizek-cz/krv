@@ -1,0 +1,161 @@
+---
+name: Docker and Helm Build and Release
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  pages: write
+  
+  id-token: write
+
+jobs:
+  prepare-release:
+    runs-on: self-hosted
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    outputs:  
+      patch:  ${{ steps.semvers.outputs.patch }}
+
+    steps:
+    - uses: AutoModality/action-clean@v1
+
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Get Previous tag
+      id: previoustag
+      uses: "WyriHaximus/github-action-get-previous-tag@v1"
+      with:
+        fallback: 1.0.0
+
+    - name: Get next minor version
+      id: semvers
+      uses: "WyriHaximus/github-action-next-semvers@v1"
+      with:
+        version: ${{ steps.previoustag.outputs.tag }}
+
+    - name: Find and Replace in Chart version
+      uses: jacobtomlinson/gha-find-replace@v3
+      with:
+        find: "version: .*"
+        replace: "version: ${{ steps.semvers.outputs.patch }}"
+        include: "**Chart.yaml"
+        regex: true
+
+    - name: Find and Replace in Chart version
+      uses: jacobtomlinson/gha-find-replace@v3
+      with:
+        find: "appVersion: .*"
+        replace: "appVersion: ${{ steps.semvers.outputs.patch }}"
+        include: "**Chart.yaml"
+        regex: true
+
+    - name: Find and Replace in Helm Chart values
+      uses: jacobtomlinson/gha-find-replace@v3
+      with:
+        find: "tag: .*"
+        replace: "tag: ${{ steps.semvers.outputs.patch }}"
+        include: "**values.yaml"
+        regex: true
+
+
+    - name: Add version to issue template
+      uses: jacobtomlinson/gha-find-replace@v3
+      with:
+        find: "### VERSION"
+        replace: "      - ${{ steps.semvers.outputs.patch }}\n### VERSION"
+        include: "**bug_report.yml"
+        regex: true
+
+
+    - name: Push changes
+      uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        commit_message: "Automaticaly update version to ${{ steps.semvers.outputs.patch }}"
+        skip_checkout: false
+        skip_fetch: false
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@latest
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.semvers.outputs.patch }}
+        release_name: Release ${{ steps.semvers.outputs.patch }}
+        draft: false
+        prerelease: false
+
+    - name: 'Create new milestone'
+      id: createmilestone
+      uses: "WyriHaximus/github-action-create-milestone@v1"
+      with:
+        title: ${{ steps.semvers.outputs.patch }}
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+  build-docs:
+    runs-on: self-hosted
+    needs: build
+
+    steps:
+    
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Pages
+        uses: actions/configure-pages@v3
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v2
+
+  # Deployment job
+  deploy-doc:
+    runs-on: self-hosted
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    needs: build-docs
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
+
+
+  build:
+    runs-on: self-hosted
+    needs: prepare-release
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+    
+    - name: Build and Push to DockerHub
+      uses: MaximilianoBz/dockerhub-buildpush@v1.1
+      with:
+        registry_url: ${{ vars.IMAGE_REPO_URL }}
+        repository_name: ${{ vars.IMAGE_REPO_NAME }}
+        user_name: ${{ vars.IMAGE_REPO_USER }}
+        password: ${{ secrets.dockerhub_secret }}
+        image_version: "${{ needs.prepare-release.outputs.patch }}"
+
+    - name: Push Helm chart to OCI compatible registry (Github)
+      uses: bsord/helm-push@v4.1.0
+      with:
+        useOCIRegistry: true
+        registry-url:  ${{ vars.HELM_REPO_URL }}
+        username:  ${{ vars.HELM_REPO_USER }}
+        access-token: ${{ secrets.dockerhub_secret }}
+        force: true
+        chart-folder: helmchart/krv

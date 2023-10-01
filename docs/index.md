@@ -1,8 +1,24 @@
-# krv - Kubernetes resource validator
+---
+layout: default
+title: Home
+nav_order: 1
+description: "krv - Kubernetes resource validator"
+permalink: /
+---
+
+# krv - Kubernetes resources validator
+
+{: .fs-5 }
 
 Tool designed to simplify the validation of Kubernetes resources using the power of JSONPath and regexp.
+{: .fs-6 .fw-300 }
 
-The `krv` provides a user-friendly and efficient solution to validate your in-cluster resources against custom-defined criteria to enforce best practices, security policies, and compliance standards across your Kubernetes clusters. 
+[Get started now](#quick-start){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
+[View it on GitHub][krv repo]{: .btn .fs-5 .mb-4 .mb-md-0 }
+
+---
+
+ The `krv` provides a user-friendly and efficient solution to validate your in-cluster resources against custom-defined criteria to enforce best practices, security policies, and compliance standards across your Kubernetes clusters. 
 
 Say goodbye to manual resource inspection and hello to automated, error-free validation with `krv`.
 
@@ -71,7 +87,7 @@ etcd-pullpolicy   kube-system          Pod        OK        5m24s
 
 ## About the project
 
-`krv` is &copy; 2022-2023 by [SIZEK s.r.o.](https://sizek.cz).
+`krv` is &copy; 2022-{{ "now" | date: "%Y" }} by [SIZEK s.r.o.](https://sizek.cz).
 
 ### License
 
@@ -96,4 +112,8 @@ email, or any other method with the owners of this repository before making a ch
 
 `krv` is committed to fostering a welcoming community.
 
-[View our Code of Conduct](https://github.com/sizekcz/krv/tree/main/CODE_OF_CONDUCT.md) on our GitHub repository.
+[View our Code of Conduct](https://github.com/sizekcz/krv/tree/main/docs/CODE_OF_CONDUCT.md) on our GitHub repository.
+
+---
+[krv repo]: https://github.com/sizekcz/krv
+
