@@ -1,19 +1,19 @@
 /*
-    krv - kubernetes resource validator
-    Copyright (C) 2022 SIZEK s.r.o
+   krv - kubernetes resource validator
+   Copyright (C) 2022 SIZEK s.r.o
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 package watcher
@@ -89,6 +89,7 @@ func check() {
 		//later than, already stored resource are used
 
 		//group CRD Validation resources by its spec.namespace
+		//non-namespaced resources are grouped under "" key
 		for i, validation := range validations.Items {
 			validationNamespaceMap[validation.Spec.Namespace] = append(validationNamespaceMap[validation.Spec.Namespace], &validations.Items[i])
 		}
@@ -118,25 +119,39 @@ func check() {
 				validation.Status.State = "MISSING"
 				validation.Status.LastCheck = timeNow
 
-				log.Debug().Msgf("Look for %s resource in namespace %s with name pattern %s", validation.Spec.Resource, validation.Spec.Namespace, validation.Spec.Name)
+				isNamespaced := validation.Spec.Namespace != ""
+				if isNamespaced {
+					log.Debug().Msgf("Look for %s resource in namespace %s with name pattern '%s'", validation.Spec.Resource, validation.Spec.Namespace, validation.Spec.Name)
+				} else {
+					log.Debug().Msgf("Look for %s cluster resource with name pattern '%s'", validation.Spec.Resource, validation.Spec.Name)
+				}
 
 				//load all validations for actual k8s resource type from map
 				unstructedResourcelist := resourceTypeMap[resourcePluralName(validation.Spec.Resource)]
 				if unstructedResourcelist != nil {
 					//go throw resources and find the correct one by name and namespace
 					for _, unstructedResource := range unstructedResourcelist.Items {
-						log.Trace().Msgf("Check namespace %s match %s and name %s match %s", unstructedResource.GetNamespace(), validation.Spec.Namespace, unstructedResource.GetName(), validation.Spec.Name)
-						validatedResourceNameMatch, _ := regexp.MatchString(validation.Spec.Name, unstructedResource.GetName())
-						if unstructedResource.GetNamespace() == validation.Spec.Namespace && validatedResourceNameMatch {
-							log.Debug().Msgf("Found match resource: %s", unstructedResource.GetName())
-							checkValidationRules(validation, &unstructedResource)
+						log.Trace().Msgf("Check resource name %s match %s", unstructedResource.GetName(), validation.Spec.Name)
+						if validatedResourceNameMatch, _ := regexp.MatchString(validation.Spec.Name, unstructedResource.GetName()); !validatedResourceNameMatch {
+							continue
+						}
 
-							//if validation of the current resource end up with NOK status it means whole Validation resource end up with NOK status
-							//and there is no need to found and validate another match resource for current Validation resource
-							//we skip out from the for loop
-							if validation.Status.State == "NOK" {
-								break
+						if isNamespaced {
+							log.Trace().Msgf("Check namespace %s match %s", unstructedResource.GetNamespace(), validation.Spec.Namespace)
+							if unstructedResource.GetNamespace() != validation.Spec.Namespace {
+								continue
 							}
+
+						}
+
+						log.Debug().Msgf("Found match %s resource: %s", validation.Spec.Resource, unstructedResource.GetName())
+						checkValidationRules(validation, &unstructedResource)
+
+						//if validation of the current resource end up with NOK status it means whole Validation resource end up with NOK status
+						//and there is no need to found and validate another match resource for current Validation resource
+						//we skip out from the for loop
+						if validation.Status.State == "NOK" {
+							break
 						}
 					}
 				}
@@ -168,7 +183,6 @@ func resourcePluralName(name string) string {
 func addAllByResourceTypeToMap(validation *v1.Validation, resourceTypeMap map[string]*unstructured.UnstructuredList) {
 	var resourcePluaralName = resourcePluralName(validation.Spec.Resource)
 	if resourceTypeMap[resourcePluaralName] == nil {
-		log.Debug().Msgf("Get all %s resources in %s namespace", resourcePluaralName, validation.Spec.Namespace)
 		var errs = ""
 		//check we have appropriate api version for current k8s resource
 		if len(apiVersionsMap[resourcePluaralName]) > 0 {
@@ -181,11 +195,24 @@ func addAllByResourceTypeToMap(validation *v1.Validation, resourceTypeMap map[st
 					apiVersion = split[1]
 				}
 
+				var unstructlist *unstructured.UnstructuredList
+				var err error
 				nodeResource := schema.GroupVersionResource{Resource: resourcePluaralName, Version: apiVersion, Group: apiGroup}
-				unstructlist, err := client.DynamicClientSet.Resource(nodeResource).Namespace(validation.Spec.Namespace).List(context.TODO(), metav1.ListOptions{})
+				isNamespaced := validation.Spec.Namespace != ""
+				if isNamespaced {
+					log.Debug().Msgf("Get all %s resources in %s namespace", resourcePluaralName, validation.Spec.Namespace)
+					unstructlist, err = client.DynamicClientSet.Resource(nodeResource).Namespace(validation.Spec.Namespace).List(context.TODO(), metav1.ListOptions{})
+				} else {
+					log.Debug().Msgf("Get all %s resources", resourcePluaralName)
+					unstructlist, err = client.DynamicClientSet.Resource(nodeResource).List(context.TODO(), metav1.ListOptions{})
+				}
 				if err != nil {
 					resourceTypeMap[resourcePluaralName] = nil
-					errs = fmt.Sprintf("DynamicClient cannot get list of %s in %s namespace: %v .", nodeResource, validation.Spec.Namespace, err.Error())
+					if isNamespaced {
+						errs = fmt.Sprintf("DynamicClient cannot get list of %s in %s namespace: %v .", nodeResource, validation.Spec.Namespace, err.Error())
+					} else {
+						errs = fmt.Sprintf("DynamicClient cannot get list of %s: %v .", nodeResource, err.Error())
+					}
 				} else {
 					resourceTypeMap[resourcePluaralName] = unstructlist
 					//null the possible previous errors
@@ -205,7 +232,12 @@ func addAllByResourceTypeToMap(validation *v1.Validation, resourceTypeMap map[st
 
 // for given Validation resource it iterates over adequate k8s resources  and looks for the one that match the rules
 func checkValidationRules(validation *v1.Validation, unstructedResource *unstructured.Unstructured) {
-	log.Debug().Msgf("Check validation rules for %s %s/%s", validation.Spec.Namespace, unstructedResource.GetNamespace(), unstructedResource.GetName())
+
+	if validation.Spec.Namespace != "" {
+		log.Debug().Msgf("Check  %s Validation rule for %s resource in %s namespace", validation.Spec.Name, unstructedResource.GetName(), unstructedResource.GetNamespace())
+	} else {
+		log.Debug().Msgf("Check  %s Validation rule for %s resource", validation.Spec.Name, unstructedResource.GetName())
+	}
 	//we found the resource for now status is OK
 	validation.Status.State = "OK"
 	defer log.Debug().Msgf("Validation status for %s set to %s", validation.Name, validation.Status.State)
