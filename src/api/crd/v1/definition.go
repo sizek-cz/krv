@@ -63,7 +63,7 @@ var ValidationCRDDefinition = &apiextensionv1.CustomResourceDefinition{
 														Type: "string",
 													},
 													"value": {
-														Type: "string",
+														XIntOrString: true,
 													},
 												},
 											},

@@ -20,7 +20,10 @@ package v1
 
 //Validation CRD objects structure
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -46,8 +49,8 @@ type ValidationSpec struct {
 	Namespace  string `json:"namespace,omitempty"`
 	Resource   string `json:"resource,omitempty"`
 	Validation []struct {
-		JsonPath string `json:"jsonPath"`
-		Value    string `json:"value"`
+		JsonPath string              `json:"jsonPath"`
+		Value    *intstr.IntOrString `json:"value"`
 	} `json:"validation"`
 }
 

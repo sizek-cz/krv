@@ -240,7 +240,6 @@ func checkValidationRules(validation *v1.Validation, unstructedResource *unstruc
 	}
 	//we found the resource for now status is OK
 	validation.Status.State = "OK"
-	defer log.Debug().Msgf("Validation status for %s set to %s", validation.Name, validation.Status.State)
 	// Convert our unstructured resource object to raw JSON
 	var rawJsonInterface interface{}
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructedResource.Object, &rawJsonInterface)
@@ -258,11 +257,14 @@ func checkValidationRules(validation *v1.Validation, unstructedResource *unstruc
 	log.Trace().Msgf("Actual validated resource: %s", jsonString)
 	//now lets check the rules by jq and if it is not fit set status to NOK and quit
 	for _, rule := range validation.Spec.Validation {
-		value := gjson.Get(jsonString, rule.JsonPath).Str
-		if match, _ := regexp.MatchString(rule.Value, value); !match {
+		value := gjson.Get(jsonString, rule.JsonPath).String()
+		log.Debug().Msgf("Checking '%s' match '%s' regex pattern", value, rule.Value.String())
+		if match, _ := regexp.MatchString(rule.Value.String(), value); !match {
 			//if condition not met let set NOK status
+			log.Debug().Msgf("Rule not match.")
 			validation.Status.State = "NOK"
 			break
 		}
 	}
+	log.Debug().Msgf("Validation status for %s set to %s", validation.Name, validation.Status.State)
 }
