@@ -122,3 +122,19 @@ spec:
       value: "true"
 
 ```
+
+### Resource with array item validation
+
+```yaml
+apiVersion: krv.sizek.cz/v1
+kind: Validation
+metadata:
+  name: example-array-etcd
+spec:
+  name: "etcd-kind-control-plane"
+  namespace: "kube-system"
+  resource: "Pod"
+  validation:
+    - jsonPath: "spec.containers.0.name"
+      value: "etcd"
+```
